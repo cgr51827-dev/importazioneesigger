@@ -37,7 +37,7 @@ st.title("📄 GeCO File Generator")
 st.markdown("Carica i file e genera automaticamente Import Standard e Recapiti")
 
 # -----------------------
-# MAPPATURA COLONNE CSV
+# MAPPATURA CSV REALE
 # -----------------------
 CSV_MAP = {
     "A": "POS_NUM",
@@ -149,7 +149,7 @@ def read_csv_robust(uploaded_file):
     raise last_error if last_error else Exception("Impossibile leggere il CSV")
 
 
-def read_excel_robust(uploaded_file):
+def read_excel_template(uploaded_file):
     return pd.read_excel(uploaded_file, dtype=str)
 
 
@@ -160,6 +160,69 @@ def check_required_columns(df):
 def get_csv_value(row, logical_col):
     real_col = CSV_MAP.get(logical_col, "")
     return row.get(real_col, "")
+
+
+def make_import_output(df_source, template_columns):
+    out = pd.DataFrame(columns=template_columns)
+
+    for _, row in df_source.iterrows():
+        new_row = {col: "" for col in template_columns}
+
+        if "A" in out.columns:
+            new_row["A"] = get_csv_value(row, "J")
+        if "D" in out.columns:
+            new_row["D"] = get_csv_value(row, "O")
+        if "E" in out.columns:
+            new_row["E"] = ""
+        if "I" in out.columns:
+            new_row["I"] = get_csv_value(row, "W")
+        if "J" in out.columns:
+            new_row["J"] = get_csv_value(row, "K")
+        if "K" in out.columns:
+            new_row["K"] = get_csv_value(row, "L")
+        if "L" in out.columns:
+            new_row["L"] = get_csv_value(row, "M")
+        if "M" in out.columns:
+            new_row["M"] = get_csv_value(row, "N")
+        if "N" in out.columns:
+            new_row["N"] = get_csv_value(row, "F")
+        if "O" in out.columns:
+            new_row["O"] = get_csv_value(row, "H")
+        if "P" in out.columns:
+            new_row["P"] = get_csv_value(row, "G")
+        if "U" in out.columns:
+            new_row["U"] = add_zero_if_needed(get_csv_value(row, "A"))
+
+        out.loc[len(out)] = new_row
+
+    return out
+
+
+def make_recap_output(df_source, template_columns):
+    out = pd.DataFrame(columns=template_columns)
+
+    for _, row in df_source.iterrows():
+        new_row = {col: "" for col in template_columns}
+
+        if "B" in out.columns:
+            new_row["B"] = add_zero_if_needed(get_csv_value(row, "A"))
+
+        telefoni = []
+        for logical_col in ["Q", "R", "S", "T", "U", "V"]:
+            val = get_csv_value(row, logical_col)
+            if str(val).strip() != "":
+                telefoni.append(add_zero_if_needed(val))
+
+        recap_cols = [chr(c) for c in range(ord("H"), ord("V") + 1) if chr(c) in out.columns]
+
+        for idx, tel in enumerate(telefoni):
+            if idx < len(recap_cols):
+                new_row[recap_cols[idx]] = tel
+
+        out.loc[len(out)] = new_row
+
+    return out
+
 
 # -----------------------
 # UPLOAD
@@ -189,67 +252,23 @@ if st.button("🚀 Genera File"):
         st.stop()
 
     try:
-        template_import = read_excel_robust(file_import)
-        template_recap = read_excel_robust(file_recap)
+        template_import = read_excel_template(file_import)
+        template_recap = read_excel_template(file_recap)
     except Exception:
         st.error("❌ Errore nella lettura dei template Excel.")
         st.stop()
 
-    while len(template_import) < len(df):
-        template_import.loc[len(template_import)] = ""
-
-    while len(template_recap) < len(df):
-        template_recap.loc[len(template_recap)] = ""
-
-    # -----------------------
-    # IMPORT STANDARD
-    # -----------------------
-    for i, row in df.iterrows():
-        template_import.at[i, "A"] = get_csv_value(row, "J")   # DBT_RAGIONESOCIALE
-        template_import.at[i, "D"] = get_csv_value(row, "O")   # DBT_CODFISCALE
-        template_import.at[i, "E"] = ""                        # lasciata vuota
-        template_import.at[i, "I"] = get_csv_value(row, "W")   # EMAIL
-        template_import.at[i, "J"] = get_csv_value(row, "K")   # DBT_INDIRIZZO
-        template_import.at[i, "K"] = get_csv_value(row, "L")   # DBT_CAP
-        template_import.at[i, "L"] = get_csv_value(row, "M")   # DBT_COMUNE
-        template_import.at[i, "M"] = get_csv_value(row, "N")   # DBT_PROVINCIA
-        template_import.at[i, "N"] = get_csv_value(row, "F")   # CAPITALE
-        template_import.at[i, "O"] = get_csv_value(row, "H")   # ONERI
-        template_import.at[i, "P"] = get_csv_value(row, "G")   # INTERESSI
-        template_import.at[i, "U"] = add_zero_if_needed(get_csv_value(row, "A"))  # POS_NUM
+    import_output = make_import_output(df, list(template_import.columns))
+    recap_output = make_recap_output(df, list(template_recap.columns))
 
     buffer_import = BytesIO()
-    template_import.to_excel(buffer_import, index=False)
+    import_output.to_excel(buffer_import, index=False)
     buffer_import.seek(0)
 
-    # -----------------------
-    # RECAPITI
-    # -----------------------
-    for i, row in df.iterrows():
-        template_recap.at[i, "B"] = add_zero_if_needed(get_csv_value(row, "A"))  # POS_NUM
-
-        telefoni = []
-        for logical_col in ["Q", "R", "S", "T", "U", "V"]:
-            val = get_csv_value(row, logical_col)
-            if str(val).strip() != "":
-                telefoni.append(add_zero_if_needed(val))
-
-        for col in [chr(c) for c in range(ord("H"), ord("V") + 1)]:
-            template_recap.at[i, col] = ""
-
-        col_index = ord("H")
-        for t in telefoni:
-            if col_index <= ord("V"):
-                template_recap.at[i, chr(col_index)] = t
-                col_index += 1
-
     buffer_recap = BytesIO()
-    template_recap.to_excel(buffer_recap, index=False)
+    recap_output.to_excel(buffer_recap, index=False)
     buffer_recap.seek(0)
 
-    # -----------------------
-    # ZIP
-    # -----------------------
     zip_buffer = BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("GeCO_import_standard.xlsx", buffer_import.getvalue())
@@ -257,7 +276,7 @@ if st.button("🚀 Genera File"):
 
     zip_buffer.seek(0)
 
-    st.success("✅ File generati correttamente")
+    st.success(f"✅ File generati correttamente. Pratiche elaborate: {len(df)}")
 
     st.download_button(
         "⬇️ Scarica ZIP",
