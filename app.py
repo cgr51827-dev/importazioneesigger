@@ -3,9 +3,13 @@ import pandas as pd
 from io import BytesIO
 import zipfile
 from datetime import datetime
+from openpyxl import load_workbook
 
 st.set_page_config(page_title="GeCO Generator", layout="wide")
 
+# -----------------------
+# LOGIN
+# -----------------------
 def login():
     if "logged" not in st.session_state:
         st.session_state.logged = False
@@ -21,6 +25,7 @@ def login():
                 st.rerun()
             else:
                 st.error("Credenziali errate")
+
         st.stop()
 
 login()
@@ -28,6 +33,9 @@ login()
 st.title("📄 GeCO File Generator")
 st.markdown("Carica i file e genera automaticamente Import Standard e Recapiti")
 
+# -----------------------
+# MAPPA CSV
+# -----------------------
 CSV_MAP = {
     "A": "POS_NUM",
     "B": "POS_COD",
@@ -54,7 +62,6 @@ CSV_MAP = {
     "W": "EMAIL",
     "X": "NOTE1",
     "Y": "NOTE2",
-    "Z": "UNNAMED: 25",
 }
 
 REQUIRED_REAL_COLUMNS = [
@@ -68,32 +75,18 @@ REQUIRED_REAL_COLUMNS = [
     "DBT_COMUNE",
     "DBT_PROVINCIA",
     "DBT_CODFISCALE",
-    "EMAIL",
     "TEL1",
     "TEL2",
     "TEL3",
     "TEL4",
     "TEL5",
     "TEL6",
+    "EMAIL",
 ]
 
-def add_zero_if_needed(value):
-    if pd.isna(value):
-        return ""
-    value = str(value).strip()
-    if value == "" or value.lower() == "nan":
-        return ""
-    if value.startswith("+"):
-        return value
-    if value.startswith("00"):
-        return value
-    if value.startswith("0"):
-        return value
-    only_digits = "".join(ch for ch in value if ch.isdigit())
-    if only_digits == "":
-        return value
-    return "0" + only_digits
-
+# -----------------------
+# FUNZIONI
+# -----------------------
 def normalize_columns(df):
     df.columns = [str(c).strip().upper() for c in df.columns]
     return df
@@ -124,9 +117,6 @@ def read_csv_robust(uploaded_file):
 
     raise last_error if last_error else Exception("Impossibile leggere il CSV")
 
-def read_excel_template(uploaded_file):
-    return pd.read_excel(uploaded_file, dtype=str)
-
 def check_required_columns(df):
     return [c for c in REQUIRED_REAL_COLUMNS if c not in df.columns]
 
@@ -134,49 +124,72 @@ def get_csv_value(row, logical_col):
     real_col = CSV_MAP.get(logical_col, "")
     return row.get(real_col, "")
 
-def make_import_output(df_source, template_columns):
-    out = pd.DataFrame(columns=template_columns)
+def add_zero_if_needed(value):
+    if pd.isna(value):
+        return ""
 
-    for _, row in df_source.iterrows():
-        new_row = {col: "" for col in template_columns}
+    value = str(value).strip()
 
-        if "A" in out.columns:
-            new_row["A"] = get_csv_value(row, "J")
-        if "D" in out.columns:
-            new_row["D"] = get_csv_value(row, "O")
-        if "E" in out.columns:
-            new_row["E"] = ""
-        if "I" in out.columns:
-            new_row["I"] = get_csv_value(row, "W")
-        if "J" in out.columns:
-            new_row["J"] = get_csv_value(row, "K")
-        if "K" in out.columns:
-            new_row["K"] = get_csv_value(row, "L")
-        if "L" in out.columns:
-            new_row["L"] = get_csv_value(row, "M")
-        if "M" in out.columns:
-            new_row["M"] = get_csv_value(row, "N")
-        if "N" in out.columns:
-            new_row["N"] = get_csv_value(row, "F")
-        if "O" in out.columns:
-            new_row["O"] = get_csv_value(row, "H")
-        if "P" in out.columns:
-            new_row["P"] = get_csv_value(row, "G")
-        if "U" in out.columns:
-            new_row["U"] = add_zero_if_needed(get_csv_value(row, "A"))
+    if value == "" or value.lower() == "nan":
+        return ""
 
-        out.loc[len(out)] = new_row
+    if value.startswith("+"):
+        return value
 
-    return out
+    if value.startswith("00"):
+        return value
 
-def make_recap_output(df_source, template_columns):
-    out = pd.DataFrame(columns=template_columns)
+    if value.startswith("0"):
+        return value
 
-    for _, row in df_source.iterrows():
-        new_row = {col: "" for col in template_columns}
+    digits = "".join(ch for ch in value if ch.isdigit())
+    if digits == "":
+        return value
 
-        if "B" in out.columns:
-            new_row["B"] = add_zero_if_needed(get_csv_value(row, "A"))
+    return "0" + digits
+
+def clear_sheet_data(ws, start_row=2, max_col=22):
+    if ws.max_row >= start_row:
+        for row in ws.iter_rows(min_row=start_row, max_row=ws.max_row, min_col=1, max_col=max_col):
+            for cell in row:
+                cell.value = None
+
+def build_import_workbook(template_file, df):
+    wb = load_workbook(template_file)
+    ws = wb.active
+
+    clear_sheet_data(ws, start_row=2, max_col=22)
+
+    excel_row = 2
+    for _, row in df.iterrows():
+        ws.cell(excel_row, 1).value = get_csv_value(row, "J")                         # A <- J
+        ws.cell(excel_row, 4).value = get_csv_value(row, "O")                         # D <- O
+        ws.cell(excel_row, 5).value = ""                                              # E vuota
+        ws.cell(excel_row, 9).value = get_csv_value(row, "W")                         # I <- W
+        ws.cell(excel_row, 10).value = get_csv_value(row, "K")                        # J <- K
+        ws.cell(excel_row, 11).value = get_csv_value(row, "L")                        # K <- L
+        ws.cell(excel_row, 12).value = get_csv_value(row, "M")                        # L <- M
+        ws.cell(excel_row, 13).value = get_csv_value(row, "N")                        # M <- N
+        ws.cell(excel_row, 14).value = get_csv_value(row, "F")                        # N <- F
+        ws.cell(excel_row, 15).value = get_csv_value(row, "H")                        # O <- H
+        ws.cell(excel_row, 16).value = get_csv_value(row, "G")                        # P <- G
+        ws.cell(excel_row, 21).value = add_zero_if_needed(get_csv_value(row, "A"))    # U <- A con 0
+        excel_row += 1
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+def build_recap_workbook(template_file, df):
+    wb = load_workbook(template_file)
+    ws = wb.active
+
+    clear_sheet_data(ws, start_row=2, max_col=22)
+
+    excel_row = 2
+    for _, row in df.iterrows():
+        ws.cell(excel_row, 2).value = add_zero_if_needed(get_csv_value(row, "A"))     # B <- A con 0
 
         telefoni = []
         for logical_col in ["Q", "R", "S", "T", "U", "V"]:
@@ -184,20 +197,30 @@ def make_recap_output(df_source, template_columns):
             if str(val).strip() != "":
                 telefoni.append(add_zero_if_needed(val))
 
-        recap_cols = [chr(c) for c in range(ord("H"), ord("V") + 1) if chr(c) in out.columns]
+        # H..V = colonne 8..22
+        target_col = 8
+        for tel in telefoni:
+            if target_col <= 22:
+                ws.cell(excel_row, target_col).value = tel
+                target_col += 1
 
-        for idx, tel in enumerate(telefoni):
-            if idx < len(recap_cols):
-                new_row[recap_cols[idx]] = tel
+        excel_row += 1
 
-        out.loc[len(out)] = new_row
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
 
-    return out
-
+# -----------------------
+# UPLOAD
+# -----------------------
 file_csv = st.file_uploader("📂 File madre (CSV)", type=["csv"])
 file_import = st.file_uploader("📂 Template Import Standard (.xlsx)", type=["xlsx"])
 file_recap = st.file_uploader("📂 Template Recapiti (.xlsx)", type=["xlsx"])
 
+# -----------------------
+# GENERAZIONE
+# -----------------------
 if st.button("🚀 Genera File"):
     if not file_csv or not file_import or not file_recap:
         st.error("❌ Carica tutti i file")
@@ -212,31 +235,21 @@ if st.button("🚀 Genera File"):
     missing = check_required_columns(df)
     if missing:
         st.error(f"❌ Colonne mancanti nel CSV: {missing}")
-        st.write("Colonne trovate nel file:", list(df.columns))
+        st.write("Colonne trovate:", list(df.columns))
         st.stop()
 
     try:
-        template_import = read_excel_template(file_import)
-        template_recap = read_excel_template(file_recap)
-    except Exception:
-        st.error("❌ Errore nella lettura dei template Excel.")
+        import_buffer = build_import_workbook(file_import, df)
+        file_import.seek(0)
+        recap_buffer = build_recap_workbook(file_recap, df)
+    except Exception as e:
+        st.error(f"❌ Errore nella compilazione dei template: {e}")
         st.stop()
-
-    import_output = make_import_output(df, list(template_import.columns))
-    recap_output = make_recap_output(df, list(template_recap.columns))
-
-    buffer_import = BytesIO()
-    import_output.to_excel(buffer_import, index=False)
-    buffer_import.seek(0)
-
-    buffer_recap = BytesIO()
-    recap_output.to_excel(buffer_recap, index=False)
-    buffer_recap.seek(0)
 
     zip_buffer = BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("GeCO_import_standard.xlsx", buffer_import.getvalue())
-        z.writestr("GeCO_recapiti.xlsx", buffer_recap.getvalue())
+        z.writestr("GeCO_import_standard.xlsx", import_buffer.getvalue())
+        z.writestr("GeCO_recapiti.xlsx", recap_buffer.getvalue())
 
     zip_buffer.seek(0)
 
