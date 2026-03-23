@@ -54,6 +54,26 @@ def add_zero_if_needed(value):
 def check_columns(df, required_cols):
     return [c for c in required_cols if c not in df.columns]
 
+def read_csv_robust(uploaded_file):
+    raw = uploaded_file.getvalue()
+
+    for encoding in ["utf-8-sig", "utf-8", "latin1", "cp1252"]:
+        for sep in [";", ",", "\t", "|"]:
+            try:
+                df = pd.read_csv(
+                    BytesIO(raw),
+                    sep=sep,
+                    encoding=encoding,
+                    dtype=str,
+                    keep_default_na=False
+                )
+                if len(df.columns) > 1:
+                    return df
+            except Exception:
+                pass
+
+    raise ValueError("Impossibile leggere il CSV")
+
 # -----------------------
 # UPLOAD
 # -----------------------
@@ -69,7 +89,11 @@ if st.button("🚀 Genera File"):
         st.error("❌ Carica tutti i file")
         st.stop()
 
-    df = pd.read_csv(file_csv)
+    try:
+        df = read_csv_robust(file_csv)
+    except Exception:
+        st.error("❌ Errore lettura CSV")
+        st.stop()
 
     required_cols = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
     missing = check_columns(df, required_cols)
@@ -89,7 +113,7 @@ if st.button("🚀 Genera File"):
 
         template_import.at[i, "A"] = row["J"]
         template_import.at[i, "D"] = row["O"]
-        template_import.at[i, "E"] = row["J"]  # fallback
+        template_import.at[i, "E"] = row["J"]
         template_import.at[i, "I"] = row["W"]
         template_import.at[i, "J"] = row["K"]
         template_import.at[i, "K"] = row["L"]
