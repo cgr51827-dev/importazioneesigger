@@ -6,39 +6,14 @@ from datetime import datetime
 
 st.set_page_config(page_title="GeCO Generator", layout="wide")
 
-# -----------------------
-# LOGIN
-# -----------------------
-def login():
-    if "logged" not in st.session_state:
-        st.session_state.logged = False
-
-    if not st.session_state.logged:
-        st.title("🔐 Accesso")
-
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-
-        if st.button("Accedi"):
-            if username == "RECAP" and password == "Recap26@":
-                st.session_state.logged = True
-                st.rerun()
-            else:
-                st.error("Credenziali errate")
-
-        st.stop()
-
-login()
-
-# -----------------------
-# APP
-# -----------------------
 st.title("📄 GeCO File Generator")
+
 st.markdown("Carica i file e genera automaticamente Import Standard e Recapiti")
 
 # -----------------------
-# FUNZIONI
+# FUNZIONI UTILI
 # -----------------------
+
 def add_zero_if_needed(value):
     if pd.isna(value):
         return ""
@@ -52,11 +27,13 @@ def add_zero_if_needed(value):
     return "0" + value
 
 def check_columns(df, required_cols):
-    return [c for c in required_cols if c not in df.columns]
+    missing = [c for c in required_cols if c not in df.columns]
+    return missing
 
 # -----------------------
-# UPLOAD
+# UPLOAD FILE
 # -----------------------
+
 file_csv = st.file_uploader("📂 File madre (CSV)", type=["csv"])
 file_import = st.file_uploader("📂 Template Import Standard (.xlsx)", type=["xlsx"])
 file_recap = st.file_uploader("📂 Template Recapiti (.xlsx)", type=["xlsx"])
@@ -64,6 +41,7 @@ file_recap = st.file_uploader("📂 Template Recapiti (.xlsx)", type=["xlsx"])
 # -----------------------
 # GENERAZIONE
 # -----------------------
+
 if st.button("🚀 Genera File"):
     if not file_csv or not file_import or not file_recap:
         st.error("❌ Carica tutti i file")
