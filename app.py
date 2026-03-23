@@ -42,17 +42,68 @@ st.markdown("Carica i file e genera automaticamente Import Standard e Recapiti")
 def add_zero_if_needed(value):
     if pd.isna(value):
         return ""
+
     value = str(value).strip()
-    if value == "":
+
+    if value == "" or value.lower() == "nan":
         return ""
+
+    if value.startswith("+"):
+        return value
+
+    if value.startswith("00"):
+        return value
+
     if value.startswith("0"):
         return value
-    if value.startswith("00") or value.startswith("+"):
+
+    only_digits = "".join(ch for ch in value if ch.isdigit())
+    if only_digits == "":
         return value
-    return "0" + value
+
+    return "0" + only_digits
+
 
 def check_columns(df, required_cols):
     return [c for c in required_cols if c not in df.columns]
+
+
+def normalize_columns(df):
+    df.columns = [str(c).strip().upper() for c in df.columns]
+    return df
+
+
+def read_csv_robust(uploaded_file):
+    raw = uploaded_file.getvalue()
+
+    encodings = ["utf-8-sig", "utf-8", "latin1", "cp1252"]
+    seps = [";", ",", "\t", "|"]
+
+    last_error = None
+
+    for enc in encodings:
+        for sep in seps:
+            try:
+                df = pd.read_csv(
+                    BytesIO(raw),
+                    sep=sep,
+                    encoding=enc,
+                    dtype=str,
+                    keep_default_na=False,
+                )
+                df = normalize_columns(df)
+
+                if len(df.columns) >= 10:
+                    return df
+            except Exception as e:
+                last_error = e
+
+    raise last_error if last_error else Exception("Impossibile leggere il CSV")
+
+
+def read_excel_robust(uploaded_file):
+    return pd.read_excel(uploaded_file, dtype=str)
+
 
 # -----------------------
 # UPLOAD
@@ -69,73 +120,78 @@ if st.button("🚀 Genera File"):
         st.error("❌ Carica tutti i file")
         st.stop()
 
-    df = pd.read_csv(file_csv)
+    try:
+        df = read_csv_robust(file_csv)
+    except Exception:
+        st.error("❌ Impossibile leggere il CSV. Controlla formato, separatore o encoding.")
+        st.stop()
 
     required_cols = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
     missing = check_columns(df, required_cols)
 
     if missing:
         st.error(f"❌ Colonne mancanti nel CSV: {missing}")
+        st.write("Colonne trovate nel file:", list(df.columns))
         st.stop()
 
-    # =========================
+    try:
+        template_import = read_excel_robust(file_import)
+        template_recap = read_excel_robust(file_recap)
+    except Exception:
+        st.error("❌ Errore nella lettura dei template Excel.")
+        st.stop()
+
+    while len(template_import) < len(df):
+        template_import.loc[len(template_import)] = ""
+
+    while len(template_recap) < len(df):
+        template_recap.loc[len(template_recap)] = ""
+
     # IMPORT STANDARD
-    # =========================
-    template_import = pd.read_excel(file_import)
-
     for i, row in df.iterrows():
-        if i >= len(template_import):
-            template_import.loc[i] = ""
-
-        template_import.at[i, "A"] = row["J"]
-        template_import.at[i, "D"] = row["O"]
-        template_import.at[i, "E"] = row["J"]  # fallback
-        template_import.at[i, "I"] = row["W"]
-        template_import.at[i, "J"] = row["K"]
-        template_import.at[i, "K"] = row["L"]
-        template_import.at[i, "L"] = row["M"]
-        template_import.at[i, "M"] = row["N"]
-        template_import.at[i, "N"] = row["F"]
-        template_import.at[i, "O"] = row["H"]
-        template_import.at[i, "P"] = row["G"]
-        template_import.at[i, "U"] = add_zero_if_needed(row["A"])
+        template_import.at[i, "A"] = row.get("J", "")
+        template_import.at[i, "D"] = row.get("O", "")
+        template_import.at[i, "E"] = row.get("J", "")
+        template_import.at[i, "I"] = row.get("W", "")
+        template_import.at[i, "J"] = row.get("K", "")
+        template_import.at[i, "K"] = row.get("L", "")
+        template_import.at[i, "L"] = row.get("M", "")
+        template_import.at[i, "M"] = row.get("N", "")
+        template_import.at[i, "N"] = row.get("F", "")
+        template_import.at[i, "O"] = row.get("H", "")
+        template_import.at[i, "P"] = row.get("G", "")
+        template_import.at[i, "U"] = add_zero_if_needed(row.get("A", ""))
 
     buffer_import = BytesIO()
     template_import.to_excel(buffer_import, index=False)
     buffer_import.seek(0)
 
-    # =========================
     # RECAPITI
-    # =========================
-    template_recap = pd.read_excel(file_recap)
-
     for i, row in df.iterrows():
-        if i >= len(template_recap):
-            template_recap.loc[i] = ""
-
-        template_recap.at[i, "B"] = add_zero_if_needed(row["A"])
+        template_recap.at[i, "B"] = add_zero_if_needed(row.get("A", ""))
 
         telefoni = []
         for col in ["Q", "R", "S", "T", "U", "V"]:
-            val = row[col]
-            if pd.notna(val) and str(val).strip() != "":
+            val = row.get(col, "")
+            if str(val).strip() != "":
                 telefoni.append(add_zero_if_needed(val))
+
+        for col in [chr(c) for c in range(ord("H"), ord("V") + 1)]:
+            template_recap.at[i, col] = ""
 
         col_index = ord("H")
         for t in telefoni:
-            template_recap.at[i, chr(col_index)] = t
-            col_index += 1
+            if col_index <= ord("V"):
+                template_recap.at[i, chr(col_index)] = t
+                col_index += 1
 
     buffer_recap = BytesIO()
     template_recap.to_excel(buffer_recap, index=False)
     buffer_recap.seek(0)
 
-    # =========================
     # ZIP
-    # =========================
     zip_buffer = BytesIO()
-
-    with zipfile.ZipFile(zip_buffer, "w") as z:
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("GeCO_import_standard.xlsx", buffer_import.getvalue())
         z.writestr("GeCO_recapiti.xlsx", buffer_recap.getvalue())
 
@@ -147,5 +203,5 @@ if st.button("🚀 Genera File"):
         "⬇️ Scarica ZIP",
         data=zip_buffer,
         file_name=f"geco_output_{datetime.now().strftime('%Y%m%d_%H%M')}.zip",
-        mime="application/zip"
+        mime="application/zip",
     )
