@@ -37,6 +37,58 @@ st.title("📄 GeCO File Generator")
 st.markdown("Carica i file e genera automaticamente Import Standard e Recapiti")
 
 # -----------------------
+# MAPPATURA COLONNE CSV
+# -----------------------
+CSV_MAP = {
+    "A": "POS_NUM",
+    "B": "POS_COD",
+    "C": "LOTTO",
+    "D": "DATA_AFFIDAMENTO",
+    "E": "DATA_SCADENZA",
+    "F": "CAPITALE",
+    "G": "INTERESSI",
+    "H": "ONERI",
+    "I": "TOTALE",
+    "J": "DBT_RAGIONESOCIALE",
+    "K": "DBT_INDIRIZZO",
+    "L": "DBT_CAP",
+    "M": "DBT_COMUNE",
+    "N": "DBT_PROVINCIA",
+    "O": "DBT_CODFISCALE",
+    "P": "DBT_PIVA",
+    "Q": "TEL1",
+    "R": "TEL2",
+    "S": "TEL3",
+    "T": "TEL4",
+    "U": "TEL5",
+    "V": "TEL6",
+    "W": "EMAIL",
+    "X": "NOTE1",
+    "Y": "NOTE2",
+    "Z": "UNNAMED: 25",
+}
+
+REQUIRED_REAL_COLUMNS = [
+    "POS_NUM",
+    "CAPITALE",
+    "INTERESSI",
+    "ONERI",
+    "DBT_RAGIONESOCIALE",
+    "DBT_INDIRIZZO",
+    "DBT_CAP",
+    "DBT_COMUNE",
+    "DBT_PROVINCIA",
+    "DBT_CODFISCALE",
+    "EMAIL",
+    "TEL1",
+    "TEL2",
+    "TEL3",
+    "TEL4",
+    "TEL5",
+    "TEL6",
+]
+
+# -----------------------
 # FUNZIONI
 # -----------------------
 def add_zero_if_needed(value):
@@ -62,10 +114,6 @@ def add_zero_if_needed(value):
         return value
 
     return "0" + only_digits
-
-
-def check_columns(df, required_cols):
-    return [c for c in required_cols if c not in df.columns]
 
 
 def normalize_columns(df):
@@ -105,6 +153,14 @@ def read_excel_robust(uploaded_file):
     return pd.read_excel(uploaded_file, dtype=str)
 
 
+def check_required_columns(df):
+    return [c for c in REQUIRED_REAL_COLUMNS if c not in df.columns]
+
+
+def get_csv_value(row, logical_col):
+    real_col = CSV_MAP.get(logical_col, "")
+    return row.get(real_col, "")
+
 # -----------------------
 # UPLOAD
 # -----------------------
@@ -126,9 +182,7 @@ if st.button("🚀 Genera File"):
         st.error("❌ Impossibile leggere il CSV. Controlla formato, separatore o encoding.")
         st.stop()
 
-    required_cols = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-    missing = check_columns(df, required_cols)
-
+    missing = check_required_columns(df)
     if missing:
         st.error(f"❌ Colonne mancanti nel CSV: {missing}")
         st.write("Colonne trovate nel file:", list(df.columns))
@@ -147,32 +201,36 @@ if st.button("🚀 Genera File"):
     while len(template_recap) < len(df):
         template_recap.loc[len(template_recap)] = ""
 
+    # -----------------------
     # IMPORT STANDARD
+    # -----------------------
     for i, row in df.iterrows():
-        template_import.at[i, "A"] = row.get("J", "")
-        template_import.at[i, "D"] = row.get("O", "")
-        template_import.at[i, "E"] = row.get("J", "")
-        template_import.at[i, "I"] = row.get("W", "")
-        template_import.at[i, "J"] = row.get("K", "")
-        template_import.at[i, "K"] = row.get("L", "")
-        template_import.at[i, "L"] = row.get("M", "")
-        template_import.at[i, "M"] = row.get("N", "")
-        template_import.at[i, "N"] = row.get("F", "")
-        template_import.at[i, "O"] = row.get("H", "")
-        template_import.at[i, "P"] = row.get("G", "")
-        template_import.at[i, "U"] = add_zero_if_needed(row.get("A", ""))
+        template_import.at[i, "A"] = get_csv_value(row, "J")   # DBT_RAGIONESOCIALE
+        template_import.at[i, "D"] = get_csv_value(row, "O")   # DBT_CODFISCALE
+        template_import.at[i, "E"] = ""                        # lasciata vuota
+        template_import.at[i, "I"] = get_csv_value(row, "W")   # EMAIL
+        template_import.at[i, "J"] = get_csv_value(row, "K")   # DBT_INDIRIZZO
+        template_import.at[i, "K"] = get_csv_value(row, "L")   # DBT_CAP
+        template_import.at[i, "L"] = get_csv_value(row, "M")   # DBT_COMUNE
+        template_import.at[i, "M"] = get_csv_value(row, "N")   # DBT_PROVINCIA
+        template_import.at[i, "N"] = get_csv_value(row, "F")   # CAPITALE
+        template_import.at[i, "O"] = get_csv_value(row, "H")   # ONERI
+        template_import.at[i, "P"] = get_csv_value(row, "G")   # INTERESSI
+        template_import.at[i, "U"] = add_zero_if_needed(get_csv_value(row, "A"))  # POS_NUM
 
     buffer_import = BytesIO()
     template_import.to_excel(buffer_import, index=False)
     buffer_import.seek(0)
 
+    # -----------------------
     # RECAPITI
+    # -----------------------
     for i, row in df.iterrows():
-        template_recap.at[i, "B"] = add_zero_if_needed(row.get("A", ""))
+        template_recap.at[i, "B"] = add_zero_if_needed(get_csv_value(row, "A"))  # POS_NUM
 
         telefoni = []
-        for col in ["Q", "R", "S", "T", "U", "V"]:
-            val = row.get(col, "")
+        for logical_col in ["Q", "R", "S", "T", "U", "V"]:
+            val = get_csv_value(row, logical_col)
             if str(val).strip() != "":
                 telefoni.append(add_zero_if_needed(val))
 
@@ -189,7 +247,9 @@ if st.button("🚀 Genera File"):
     template_recap.to_excel(buffer_recap, index=False)
     buffer_recap.seek(0)
 
+    # -----------------------
     # ZIP
+    # -----------------------
     zip_buffer = BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("GeCO_import_standard.xlsx", buffer_import.getvalue())
